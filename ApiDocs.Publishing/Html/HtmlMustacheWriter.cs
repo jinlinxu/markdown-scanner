@@ -41,6 +41,8 @@ namespace ApiDocs.Publishing.Html
         private FileTagDefinition fileTag;
         private Dictionary<string, object> PageParameters { get; set; }
 
+        private static string GitHubHrefPlaceHolder = "#GitHubHref#";
+
         public bool CollapseTocToActiveGroup { get; set; }
 
 
@@ -112,6 +114,12 @@ namespace ApiDocs.Publishing.Html
             this.fileTag.RootDestinationFolder = rootDestinationFolder;
 
             var pageHtml = this.generator.Render(templateObject);
+            if (this.Options.InsertGitHubInformation)
+            {
+                string gitHubUrl = page.DisplayName.TrimStart(new char[] { '\\' }).Replace("\\", "/");
+                gitHubUrl = this.Options.GitHubBaseUrl + "/" + gitHubUrl;
+                pageHtml = pageHtml.Replace(GitHubHrefPlaceHolder, gitHubUrl);
+            }
             pageHtml = await this.ConvertLineEndingsAsync(pageHtml, this.OutputLineEndings);
 
             using (var outputWriter = new StreamWriter(destinationFile))

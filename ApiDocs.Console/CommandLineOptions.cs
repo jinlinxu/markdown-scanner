@@ -388,6 +388,14 @@ namespace ApiDocs.ConsoleApp
 
         #endregion
 
+        #region GitHub information controls
+        [Option("insert-gitInfo", HelpText = "Whether insert GitHub information into generated file")]
+        public bool InsertGitHubInformation { get; set; }
+
+        [Option("gitUrl", HelpText = "The github repo base url")]
+        public string GitHubBaseUrl { get; set; }
+        #endregion
+
         public override bool HasRequiredProperties(out string[] missingArguments)
         {
             string[] baseResults;

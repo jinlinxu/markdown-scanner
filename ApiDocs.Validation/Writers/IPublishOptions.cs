@@ -71,6 +71,17 @@ namespace ApiDocs.Validation.Writers
         {
             get; set;
         }
+
+
+        /// <summary>
+        /// Allows insert GitHubInformation into generated html file.
+        /// </summary>
+        bool InsertGitHubInformation { get; set; }
+
+        /// <summary>
+        /// The base url of GitHub repo.
+        /// </summary>
+        string GitHubBaseUrl { get; set; }
     }
 
     public class DefaultPublishOptions : IPublishOptions
@@ -86,5 +97,9 @@ namespace ApiDocs.Validation.Writers
         public string AdditionalPageParameters { get; set; }
 
         public string TableOfContentsOutputRelativePath { get; set; }
+
+        public bool InsertGitHubInformation { get; set; }
+
+        public string GitHubBaseUrl { get; set; }
     }
 }
