@@ -67,21 +67,25 @@ namespace ApiDocs.Validation.Writers
         /// <summary>
         /// Specify that a table of contents file should be written in the relative path provided.
         /// </summary>
-        string TableOfContentsOutputRelativePath
+         string TableOfContentsOutputRelativePath
         {
             get; set;
         }
 
+         /// <summary>
+         /// Allows insert GitHubInformation into generated html file.
+         /// </summary>
+         bool InsertGitHubInformation { get; set; }
 
-        /// <summary>
-        /// Allows insert GitHubInformation into generated html file.
-        /// </summary>
-        bool InsertGitHubInformation { get; set; }
+         /// <summary>
+         /// The base url of GitHub repo.
+         /// </summary>
+         string GitHubBaseUrl { get; set; }
 
-        /// <summary>
-        /// The base url of GitHub repo.
-        /// </summary>
-        string GitHubBaseUrl { get; set; }
+         /// <summary>
+         /// Allows HTML tags in the markdown source to be passed through to the output markdown.
+         /// </summary>
+         bool AllowUnsafeHtmlContentInMarkdown { get; set; }
     }
 
     public class DefaultPublishOptions : IPublishOptions
@@ -98,8 +102,11 @@ namespace ApiDocs.Validation.Writers
 
         public string TableOfContentsOutputRelativePath { get; set; }
 
+
         public bool InsertGitHubInformation { get; set; }
 
         public string GitHubBaseUrl { get; set; }
+
+        public bool AllowUnsafeHtmlContentInMarkdown { get; set; }
     }
 }

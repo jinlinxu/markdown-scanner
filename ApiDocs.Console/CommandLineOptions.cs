@@ -180,7 +180,7 @@ namespace ApiDocs.ConsoleApp
         [Option('m', "method", HelpText = "Name of the method to test. If omitted, all defined methods are tested.", MutuallyExclusiveSet="fileOrMethod")]
         public string MethodName { get; set; }
 
-        [Option("file", HelpText="Name of the doc file to test. If missing, all methods are tested.", MutuallyExclusiveSet="fileOrMethod")]
+        [Option("file", HelpText="Name of the files to test. Wildcard(*) is allowed. If missing, all methods are tested.", MutuallyExclusiveSet="fileOrMethod")]
         public string FileName { get; set; }
 
         [Option("force-all", HelpText="Force all defined scenarios to be executed, even if disabled.")]
@@ -198,6 +198,7 @@ namespace ApiDocs.ConsoleApp
         private const string UsernameArgument = "username";
         private const string PasswordArgument = "password";
         private const string HttpLoggerArgument = "httplog";
+        private const string IgnoreRequiredScopesArgument = "ignore-scopes";
 
         public CheckServiceOptions()
         {
@@ -242,6 +243,8 @@ namespace ApiDocs.ConsoleApp
         [Option(HttpLoggerArgument, HelpText="Create an HTTP Session archive at the specify path.")]
         public string HttpLoggerOutputPath { get; set; }
 
+        [Option(IgnoreRequiredScopesArgument, HelpText="Disable checking accounts for required scopes before calling methods")]
+        public bool IgnoreRequiredScopes { get; set; }
 
         private IServiceAccount GetEnvironmentVariablesAccount()
         {
@@ -368,6 +371,9 @@ namespace ApiDocs.ConsoleApp
 
         [Option("parameters", HelpText="Specify additional page variables that are used by the publishing engine. URL encoded: key=value&key2=value2.")]
         public string AdditionalPageParameters { get; set; }
+
+        [Option("allow-unsafe-html", HelpText="Allows HTML tags in the markdown source to be passed through to the output markdown.")]
+        public bool AllowUnsafeHtmlContentInMarkdown { get; set; }
 
         #region Swagger2 output controls
 
