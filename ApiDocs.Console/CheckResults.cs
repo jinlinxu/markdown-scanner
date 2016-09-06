@@ -92,10 +92,13 @@ namespace ApiDocs.ConsoleApp
             return result;
         }
 
-        public void PrintToConsole()
+        public void PrintToConsole(bool addNewLine = true)
         {
-            FancyConsole.WriteLine();
-            FancyConsole.Write("Runs completed. ");
+            if (addNewLine)
+            {
+                FancyConsole.WriteLine();
+                FancyConsole.Write("Runs completed. ");
+            }
 
             const string percentCompleteFormat = "{0:0.00}% passed";
             FancyConsole.Write(
@@ -112,7 +115,7 @@ namespace ApiDocs.ConsoleApp
                     FancyConsole.Write(", ");
                 if (this.WarningCount > 0)
                     FancyConsole.Write(FancyConsole.ConsoleWarningColor, "{0} warnings", this.WarningCount);
-                if (this.WarningCount > 0 || this.FailureCount > 0 && this.SuccessCount > 0)
+                if ( (this.WarningCount > 0 || this.FailureCount > 0) && this.SuccessCount > 0)
                     FancyConsole.Write(", ");
                 if (this.SuccessCount > 0)
                     FancyConsole.Write(FancyConsole.ConsoleSuccessColor, "{0} successful", this.SuccessCount);

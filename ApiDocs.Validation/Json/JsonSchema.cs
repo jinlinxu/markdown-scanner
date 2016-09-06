@@ -474,7 +474,7 @@ namespace ApiDocs.Validation.Json
                     {
                         try
                         {
-                            Uri parsedUri = new Uri(inputProperty.OriginalValue, UriKind.Absolute);
+                            new Uri(inputProperty.OriginalValue, UriKind.Absolute);
                             return PropertyValidationOutcome.Ok;
                         }
                         catch (FormatException)
@@ -677,6 +677,10 @@ namespace ApiDocs.Validation.Json
                         if (objectSchema.ContainsKey("@odata.type"))
                         {
                             param.Type = new ParameterDataType(objectSchema["@odata.type"].OriginalValue);
+                        }
+                        else if (objectSchema.ContainsKey("@type"))
+                        {
+                            param.Type = new ParameterDataType(objectSchema["@type"].OriginalValue);
                         }
                         else
                         {

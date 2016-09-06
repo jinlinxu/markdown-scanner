@@ -1,6 +1,6 @@
 # API Documentation Test Tool
 
-[![Build status](https://ci.appveyor.com/api/projects/status/4y5c14kagoh2ljsw/branch/master?svg=true)](https://ci.appveyor.com/project/OneDrive/markdown-scanner/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/ahf4yakswc3np2qu/branch/master?svg=true)](https://ci.appveyor.com/project/OneDrive/markdown-scanner/branch/master)
 
 The API documentation test tool makes it easy to validate that the Markdown-based API
 documentation matches a REST service implementation.
@@ -44,6 +44,7 @@ All commands have the following options available:
 | `--short`          | Print concise output to the console.                                                        |
 | `--verbose`        | Print verbose output to the console, including full HTTP requests/responses.                |
 | `--log <log_file>` | Log console output to a file.                                                               |
+| `--parameters <params>` | A URL-encoded string containing key/value pairs. Allows additional parameters to be passed to the task. Currently used by the tagging feature to specify content to include. For more information see [Markdown customizations](docs/markdown-customizations.md). |
 
 ### Print Command
 Print information about the source files, resources, methods, and requests
@@ -63,7 +64,7 @@ Check for broken links in the documentation.
 No specific options are required. Using `--verbose` will include warnings about
 links that were not verified.
 
-Example: `apidocs.exe links --path ~/github/api-docs --method search`
+Example: `apidocs.exe check-links --path ~/github/api-docs --method search`
 
 ### Check-docs Command
 The `check-docs` command ensures that the documentation is internally consistent.
@@ -98,6 +99,7 @@ automatically be loaded and used by the check-service method.
 | `--method <method_name>`   | Optional. Check a single request/response method instead of everything in the documentation.                                                                                            |
 | `--odata-metadata <value>` | Optional. Specify the value of the odata.metadata level that is provided in the Accept header.                                                                                          |
 | `--pause`                  | Pause for a key press between API calls to the service to enable reading the responses.                                                                                                 |
+| `--scopes <scopes>`        | Provide a command separated list of scopes which are provided by the command line accessToken. |
 | `--url <url>`              | Set the base URL for the service calls.                                                                                                                                                 |
 
 Example:
@@ -339,3 +341,5 @@ properties defined:
 ## Open Source
 
 See [OpenSourceNotes](OpenSourceNotes.md) for more details about open source usage in markdown-scanner.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.

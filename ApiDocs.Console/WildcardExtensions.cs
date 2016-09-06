@@ -23,24 +23,29 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-namespace ApiDocs.Validation.UnitTests
+
+namespace ApiDocs.ConsoleApp
 {
-    public class DocFileForTesting : DocFile
+    using System.Text.RegularExpressions;
+
+    internal static class WildcardExtensions
     {
-        private readonly string contentsOfFile;
-        public DocFileForTesting(string contentsOfFile, string fullPath, string displayName, DocSet parent)
-            : base()
+        /// <summary>
+        /// Convert a wildcard string pattern to a RegEx.
+        /// </summary>
+        /// <param name="pattern"></param>
+        /// <returns></returns>
+        private static string WildcardToRegex(string pattern)
         {
-            this.contentsOfFile = contentsOfFile;
-            this.FullPath = fullPath;
-            this.DisplayName = displayName;
-            this.Parent = parent;
+            return "^" + Regex.Escape(pattern)
+                              .Replace(@"\*", ".*")
+                              .Replace(@"\?", ".")
+                       + "$";
         }
 
-        protected override string GetContentsOfFile(string tags)
+        public static bool IsWildcardMatch(this string source, string pattern)
         {
-            return this.contentsOfFile;
+            return Regex.IsMatch(source, WildcardToRegex(pattern));
         }
-
     }
 }

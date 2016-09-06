@@ -95,6 +95,26 @@ namespace ApiDocs.ConsoleApp
         [Option("ignore-errors", HelpText="Prevent errors from generating a non-zero return code.")]
         public bool IgnoreErrors { get; set; }
 
+        [Option("parameters", HelpText = "Specify additional page variables that are used by the publishing engine. URL encoded: key=value&key2=value2.")]
+        public string AdditionalPageParameters { get; set; }
+
+        public Dictionary<string,object> PageParameterDict {
+            get
+            {
+                if (string.IsNullOrEmpty(AdditionalPageParameters))
+                    return null;
+
+                var data = new Dictionary<string, object>();
+
+                var parameters = Validation.Http.HttpParser.ParseQueryString(AdditionalPageParameters);
+                foreach (var key in parameters.AllKeys)
+                {
+                    data[key] = parameters[key];
+                }
+                return data;
+            }
+        }
+
 #if DEBUG
         [Option("debug", HelpText="Launch the debugger before doing anything interesting")]
         public bool AttachDebugger { get; set; }
@@ -199,6 +219,7 @@ namespace ApiDocs.ConsoleApp
         private const string PasswordArgument = "password";
         private const string HttpLoggerArgument = "httplog";
         private const string IgnoreRequiredScopesArgument = "ignore-scopes";
+        private const string ProvidedScopesArgument = "scopes";
 
         public CheckServiceOptions()
         {
@@ -246,6 +267,9 @@ namespace ApiDocs.ConsoleApp
         [Option(IgnoreRequiredScopesArgument, HelpText="Disable checking accounts for required scopes before calling methods")]
         public bool IgnoreRequiredScopes { get; set; }
 
+        [Option(ProvidedScopesArgument, HelpText = "Comma separated list of scopes provided for the command line account")]
+        public string ProvidedScopes { get; set; }
+
         private IServiceAccount GetEnvironmentVariablesAccount()
         {
             // Try to add an account from environment variables
@@ -276,16 +300,21 @@ namespace ApiDocs.ConsoleApp
             {
                 // Run the tests with a single account based on this access token
                 if (string.IsNullOrEmpty(this.ServiceRootUrl))
+                {
                     props.Add(ServiceUrlArgument);
+                }
                 else
+                {
                     this.FoundAccounts.Add(
                         new OAuthAccount
                         {
                             Name = "command-line-oauth",
                             Enabled = true,
                             AccessToken = this.AccessToken,
-                            BaseUrl = this.ServiceRootUrl
+                            BaseUrl = this.ServiceRootUrl,
+                            Scopes = (null != this.ProvidedScopes) ? this.ProvidedScopes.Split(',') : new string[0]
                         });
+                }
             }
             else if (!string.IsNullOrEmpty(this.Username))
             {
@@ -335,7 +364,7 @@ namespace ApiDocs.ConsoleApp
         [Option("output", Required=true, HelpText="Output directory for sanitized documentation.")]
         public string OutputDirectory { get; set; }
 
-        [Option("format", DefaultValue=PublishFormat.Markdown, HelpText="Format of the output documentation.")]
+        [Option("format", DefaultValue=PublishFormat.Markdown, HelpText="Format of the output documentation. Possiblev values are html, markdown, mustache, jsontoc, swagger, and edmx.")]
         public PublishFormat Format { get; set; }
 
         [Option("template", HelpText = "Specify the folder where output template files are located.")]
@@ -368,9 +397,6 @@ namespace ApiDocs.ConsoleApp
             get { return (this.SourceFiles ?? string.Empty).Split(new char[] {';'}, StringSplitOptions.RemoveEmptyEntries); }
             set { this.SourceFiles = value.ComponentsJoinedByString(";"); }
         }
-
-        [Option("parameters", HelpText="Specify additional page variables that are used by the publishing engine. URL encoded: key=value&key2=value2.")]
-        public string AdditionalPageParameters { get; set; }
 
         [Option("allow-unsafe-html", HelpText="Allows HTML tags in the markdown source to be passed through to the output markdown.")]
         public bool AllowUnsafeHtmlContentInMarkdown { get; set; }
@@ -438,7 +464,8 @@ namespace ApiDocs.ConsoleApp
             Swagger2,
             Outline,
             Mustache,
-            Edmx
+            Edmx,
+            JsonToc
         }
     }
 }
