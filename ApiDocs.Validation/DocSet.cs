@@ -191,6 +191,7 @@ namespace ApiDocs.Validation
                         var config = JsonConvert.DeserializeObject<T>(reader.ReadToEnd());
                         if (null != config && config.IsValid)
                         {
+                            config.LoadComplete();
                             validConfigurationFiles.Add(config);
                             config.SourcePath = file.FullName;
                         }
@@ -259,8 +260,48 @@ namespace ApiDocs.Validation
             this.Resources = foundResources.ToArray();
             this.Methods = foundMethods.ToArray();
 
+            //CheckForDuplicatesResources(foundResources, detectedErrors);
+            //CheckForDuplicatesMethods(foundMethods, detectedErrors);
+
             errors = detectedErrors.ToArray();
             return detectedErrors.Count == 0;
+        }
+
+        /// <summary>
+        /// Report errors if there are any methods with duplicate identifiers discovered
+        /// </summary>
+        /// <param name="foundMethods"></param>
+        /// <param name="detectedErrors"></param>
+        private void CheckForDuplicatesMethods(List<MethodDefinition> foundMethods, List<ValidationError> detectedErrors)
+        {
+            Dictionary<string, DocFile> identifiers = new Dictionary<string, DocFile>();
+            foreach (var method in foundMethods)
+            {
+                if (identifiers.ContainsKey(method.Identifier))
+                {
+                    detectedErrors.Add(new ValidationError(ValidationErrorCode.DuplicateMethodIdentifier, null, "Duplicate method identifier detected: {0} in {1} and {2}.", method.Identifier, identifiers[method.Identifier].DisplayName, method.SourceFile.DisplayName));
+                }
+                else
+                {
+                    identifiers.Add(method.Identifier, method.SourceFile);
+                }
+            }
+        }
+
+        private void CheckForDuplicatesResources(List<ResourceDefinition> foundResources, List<ValidationError> detectedErrors)
+        {
+            Dictionary<string, DocFile> identifiers = new Dictionary<string, DocFile>();
+            foreach (var resource in foundResources)
+            {
+                if (identifiers.ContainsKey(resource.Name))
+                {
+                    detectedErrors.Add(new ValidationError(ValidationErrorCode.DuplicateMethodIdentifier, null, "Duplicate method identifier detected: {0} in {1} and {2}.", resource.Name, identifiers[resource.Name].DisplayName, resource.SourceFile.DisplayName));
+                }
+                else
+                {
+                    identifiers.Add(resource.Name, resource.SourceFile);
+                }
+            }
         }
 
         /// <summary>
@@ -278,8 +319,8 @@ namespace ApiDocs.Validation
 
             List<ValidationError> detectedErrors = new List<ValidationError>();
 
-            // Verify the request is valid (headers, etc)
-            method.VerifyHttpRequest(detectedErrors);
+            // Verify the request is valid (headers, request body)
+            method.VerifyRequestFormat(detectedErrors);
 
             // Verify that the expected response headers match the actual response headers
             ValidationError[] httpErrors;
@@ -356,13 +397,28 @@ namespace ApiDocs.Validation
         /// <param name="includeWarnings"></param>
         /// <param name="errors"></param>
         /// <returns></returns>
-        public bool ValidateLinks(bool includeWarnings, out ValidationError[] errors)
+        public bool ValidateLinks(bool includeWarnings, string[] relativePathForFiles, out ValidationError[] errors)
         {
             List<ValidationError> foundErrors = new List<ValidationError>();
 
             Dictionary<string, bool> orphanedPageIndex = this.Files.ToDictionary(x => this.RelativePathToFile(x, true), x => true);
 
-            foreach (var file in this.Files)
+            List<DocFile> filesToCheck = new List<Validation.DocFile>();
+            if (null == relativePathForFiles)
+            {
+                filesToCheck.AddRange(this.Files);
+            }
+            else
+            {
+                foreach(var relativePath in relativePathForFiles)
+                {
+                    var file = this.LookupFileForPath(relativePath);
+                    if (null != file)
+                        filesToCheck.Add(file);
+                }
+            }
+
+            foreach (var file in filesToCheck)
             {
                 ValidationError[] localErrors;
                 string [] linkedPages;
@@ -382,9 +438,13 @@ namespace ApiDocs.Validation
                 }
             }
 
-            foundErrors.AddRange(from o in orphanedPageIndex
-                                 where o.Value
-                                 select new ValidationWarning(ValidationErrorCode.OrphanedDocumentPage, null, "Page {0} has no incoming links.", o.Key));
+            if (relativePathForFiles == null)
+            {
+                // We only report orphan pages when scanning the whole docset.
+                foundErrors.AddRange(from o in orphanedPageIndex
+                                     where o.Value
+                                     select new ValidationWarning(ValidationErrorCode.OrphanedDocumentPage, null, "Page {0} has no incoming links.", o.Key));
+            }
 
             errors = foundErrors.ToArray();
             return !errors.WereWarningsOrErrors();
@@ -519,7 +579,7 @@ namespace ApiDocs.Validation
         }
 
 
-        internal DocFile LookupFileForPath(string path)
+        public DocFile LookupFileForPath(string path)
         {
             // Translate path into what we're looking for
             string[] pathComponents = path.Split('/', '\\');
@@ -532,10 +592,6 @@ namespace ApiDocs.Validation
 
             return query.FirstOrDefault();
         }
-        
-        
-
-
 
     }
 

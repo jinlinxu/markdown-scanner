@@ -143,12 +143,15 @@ namespace ApiDocs.Validation
             Markdown md = new Markdown
             {
                 SafeMode = false,
-                ExtraMode = true
+                ExtraMode = true,
+                AutoHeadingIDs = true,
+                NewWindowForExternalLinks = true
             };
 
             this.HtmlContent = md.Transform(inputMarkdown);
             this.OriginalMarkdownBlocks = md.Blocks;
             this.MarkdownLinks = new List<ILinkInfo>(md.FoundLinks);
+            this.bookmarks.AddRange(md.HeaderIdsInDocument);
         }
 
         protected virtual string GetContentsOfFile(string tags)
@@ -163,7 +166,7 @@ namespace ApiDocs.Validation
         /// <summary>
         /// Read the contents of the file into blocks and generate any resource or method definitions from the contents
         /// </summary>
-        public bool Scan(string tags, out ValidationError[] errors)
+        public virtual bool Scan(string tags, out ValidationError[] errors)
         {
             this.HasScanRun = true;
             List<ValidationError> detectedErrors = new List<ValidationError>();
@@ -284,7 +287,6 @@ namespace ApiDocs.Validation
                 // Capture GitHub Flavored Markdown Bookmarks
                 if (IsHeaderBlock(block, 6))
                 {
-                    this.AddBookmarkForHeader(block.Content);
                     this.AddHeaderToHierarchy(headerStack, block);
                 }
 
@@ -348,9 +350,13 @@ namespace ApiDocs.Validation
                         {
                             annotation = this.ParsePageAnnotation(block);
                         }
+                        catch (JsonReaderException readerEx)
+                        {
+                            detectedErrors.Add(new ValidationWarning(ValidationErrorCode.JsonParserException, this.DisplayName, "Unable to parse page annotation JSON: {0}", readerEx.Message));
+                        }
                         catch (Exception ex)
                         {
-                            detectedErrors.Add(new ValidationWarning(ValidationErrorCode.JsonParserException, this.DisplayName, "Unable to parse potential page annotation: {0}", ex.Message));
+                            detectedErrors.Add(new ValidationWarning(ValidationErrorCode.AnnotationParserException, this.DisplayName, "Unable to parse annotation: {0}", ex.Message));
                         }
 
 
@@ -562,11 +568,13 @@ namespace ApiDocs.Validation
             return null;
         }
 
-        private void AddBookmarkForHeader(string headerText)
+        private static Dictionary<char, string> BookmarkReplacmentMap = new Dictionary<char, string>
         {
- 	        string bookmark = headerText.ToLowerInvariant().Replace(' ', '-').Replace(".", "");
-            this.bookmarks.Add(bookmark);
-        }
+            [' '] = "-",
+            ['.'] = "",
+            [','] = "",
+            [':'] = ""
+        };
 
         /// <summary>
         /// Run post processing on the collection of elements found inside this doc file.
@@ -743,7 +751,7 @@ namespace ApiDocs.Validation
                         break;
                     case TableBlockType.ResourcePropertyDescriptions:
                     case TableBlockType.ResponseObjectProperties:
-                        Console.WriteLine("Object description that wasn't handled: {0} on method {1}", table.Title, onlyMethod.RequestMetadata.MethodName);
+                        Console.WriteLine("Response property descriptions weren't converted: Table '{0}' on method '{1}'", table.Title, onlyMethod.RequestMetadata.MethodName);
                         break;
                     default:
                         Console.WriteLine("Something else that wasn't handled: type:{0}, title:{1} on method {2}", table.Type, table.Title, onlyMethod.RequestMetadata.MethodName);
@@ -933,7 +941,7 @@ namespace ApiDocs.Validation
                     if (!link.Text.ToUpper().Equals("END") && !link.Text.ToUpper().StartsWith("TAGS="))
                     {
                         foundErrors.Add(new ValidationError(ValidationErrorCode.MissingLinkSourceId, this.DisplayName, 
-                            "Link specifies ID '{0}' which was not found in the document.", link.Text));
+                            "Link ID '[{0}]' used in document by not defined. Define with '[{0}]: url' or remove square brackets.", link.Text));
                     }
                     
                     continue;
@@ -941,31 +949,34 @@ namespace ApiDocs.Validation
 
                 string relativeFileName;
                 var result = this.VerifyLink(this.FullPath, link.Definition.url, this.BasePath, out relativeFileName);
+                string suggestion = (relativeFileName != null) ? $"Did you mean: {relativeFileName}" : string.Empty;
                 switch (result)
                 {
-                    case LinkValidationResult.BookmarkSkipped:
                     case LinkValidationResult.ExternalSkipped:
                         if (includeWarnings)
-                            foundErrors.Add(new ValidationWarning(ValidationErrorCode.LinkValidationSkipped, this.DisplayName, "Skipped validation of link '{1}' to URL '{0}'", link.Definition.url, link.Text));
+                            foundErrors.Add(new ValidationWarning(ValidationErrorCode.LinkValidationSkipped, this.DisplayName, "Skipped validation of external link '[{1}]({0})'", link.Definition.url, link.Text));
                         break;
                     case LinkValidationResult.FileNotFound:
-                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkDestinationNotFound, this.DisplayName, "Destination missing for link '{1}' to URL '{0}'", link.Definition.url, link.Text));
+                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkDestinationNotFound, this.DisplayName, "FileNotFound: '[{1}]({0})'. {2}", link.Definition.url, link.Text, suggestion));
+                        break;
+                    case LinkValidationResult.BookmarkMissing:
+                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkDestinationNotFound, this.DisplayName, "BookmarkMissing: '[{1}]({0})'. {2}", link.Definition.url, link.Text, suggestion));
                         break;
                     case LinkValidationResult.ParentAboveDocSetPath:
-                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkDestinationOutsideDocSet, this.DisplayName, "Destination outside of doc set for link '{1}' to URL '{0}'", link.Definition.url, link.Text));
+                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkDestinationOutsideDocSet, this.DisplayName, "Relative link outside of doc set: '[{1}]({0})'.", link.Definition.url, link.Text));
                         break;
                     case LinkValidationResult.UrlFormatInvalid:
-                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkFormatInvalid, this.DisplayName, "Invalid URL format for link '{1}' to URL '{0}'", link.Definition.url, link.Text));
+                        foundErrors.Add(new ValidationError(ValidationErrorCode.LinkFormatInvalid, this.DisplayName, "InvalidUrlFormat '[{1}]({0})'.", link.Definition.url, link.Text));
                         break;
                     case LinkValidationResult.Valid:
-                        foundErrors.Add(new ValidationMessage(this.DisplayName, "Link to URL '{0}' is valid.", link.Definition.url, link.Text));
+                        foundErrors.Add(new ValidationMessage(this.DisplayName, "Valid link '[{1}]({0})'.", link.Definition.url, link.Text));
                         if (null != relativeFileName)
                         {
                             linkedPages.Add(relativeFileName);
                         }
                         break;
                     default:
-                        foundErrors.Add(new ValidationError(ValidationErrorCode.Unknown, this.DisplayName, "{2}: for link '{1}' to URL '{0}'", link.Definition.url, link.Text, result));
+                        foundErrors.Add(new ValidationError(ValidationErrorCode.Unknown, this.DisplayName, "{2}: Link '[{1}]({0})'.", link.Definition.url, link.Text, result));
                         break;
 
                 }
@@ -1013,6 +1024,9 @@ namespace ApiDocs.Validation
                     }
                     else 
                     {
+                        var suggestion = StringSuggestions.SuggestStringFromCollection(bookmarkName, this.bookmarks);
+                        if (suggestion != null)
+                            relativeFileName = "#" + suggestion;
                         return LinkValidationResult.BookmarkMissing;
                     }
                 }
@@ -1027,14 +1041,14 @@ namespace ApiDocs.Validation
             }
         }
 
-        protected virtual LinkValidationResult VerifyRelativeLink(FileInfo sourceFile, string linkUrl, string docSetBasePath, out string relativeFileName)
+        protected virtual LinkValidationResult VerifyRelativeLink(FileInfo sourceFile, string originalLinkUrl, string docSetBasePath, out string relativeFileName)
         {
             if (sourceFile == null) throw new ArgumentNullException("sourceFile");
-            if (linkUrl == null) throw new ArgumentNullException("linkUrl");
-            if (docSetBasePath == null) throw new ArgumentNullException("docSetBasePath");
+            if (string.IsNullOrEmpty(originalLinkUrl)) throw new ArgumentNullException("linkUrl");
+            if (string.IsNullOrEmpty(docSetBasePath)) throw new ArgumentNullException("docSetBasePath");
 
 
-            if (linkUrl.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+            if (originalLinkUrl.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
             {
                 // TODO: Verify that this is an actual email address
                 relativeFileName = null;
@@ -1044,27 +1058,29 @@ namespace ApiDocs.Validation
             relativeFileName = null;
             var rootPath = sourceFile.DirectoryName;
             string bookmarkName = null;
-            if (linkUrl.Contains("#"))
+            var workingLinkUrl = originalLinkUrl;
+
+            if (workingLinkUrl.Contains("#"))
             {
-                int indexOfHash = linkUrl.IndexOf('#');
-                bookmarkName = linkUrl.Substring(indexOfHash + 1);
-                linkUrl = linkUrl.Substring(0, indexOfHash);
+                int indexOfHash = workingLinkUrl.IndexOf('#');
+                bookmarkName = workingLinkUrl.Substring(indexOfHash + 1);
+                workingLinkUrl = workingLinkUrl.Substring(0, indexOfHash);
             }
 
-            if (linkUrl.StartsWith("/"))
+            if (workingLinkUrl.StartsWith("/"))
             {
                 // URL is relative to the base for the documentation
                 rootPath = docSetBasePath;
-                linkUrl = linkUrl.Substring(1);
+                workingLinkUrl = workingLinkUrl.Substring(1);
             }
 
-            while (linkUrl.StartsWith(".." + Path.DirectorySeparatorChar))
+            while (workingLinkUrl.StartsWith("../"))
             {
                 var nextLevelParent = new DirectoryInfo(rootPath).Parent;
                 if (null != nextLevelParent)
                 {
                     rootPath = nextLevelParent.FullName;
-                    linkUrl = linkUrl.Substring(3);
+                    workingLinkUrl = workingLinkUrl.Substring(3);
                 }
                 else
                 {
@@ -1079,10 +1095,17 @@ namespace ApiDocs.Validation
 
             try
             {
-                var pathToFile = Path.Combine(rootPath, linkUrl);
+                workingLinkUrl = workingLinkUrl.Replace('/', Path.DirectorySeparatorChar);     // normalize the path syntax between local file system and web
+
+                var pathToFile = Path.Combine(rootPath, workingLinkUrl);
                 FileInfo info = new FileInfo(pathToFile);
                 if (!info.Exists)
                 {
+                    if (info.Directory.Exists)
+                    {
+                        var candidateFiles = from f in info.Directory.GetFiles() select f.Name;
+                        relativeFileName = StringSuggestions.SuggestStringFromCollection(info.Name, candidateFiles);
+                    }
                     return LinkValidationResult.FileNotFound;
                 }
 
@@ -1098,6 +1121,9 @@ namespace ApiDocs.Validation
                     }
                     else if (!otherDocFile.bookmarks.Contains(bookmarkName))
                     {
+                        var suggestion = StringSuggestions.SuggestStringFromCollection(bookmarkName, otherDocFile.bookmarks);
+                        if (null != suggestion)
+                            relativeFileName = "#" + suggestion;
                         return LinkValidationResult.BookmarkMissing;
                     }
                 }

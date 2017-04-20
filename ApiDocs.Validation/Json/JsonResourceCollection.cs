@@ -146,12 +146,12 @@ namespace ApiDocs.Validation.Json
         /// <param name="errors"></param>
         /// <param name="jsonStringForFallbackIfMissingResource"></param>
         /// <returns></returns>
-        protected JsonSchema GetJsonSchema(string resourceType, IList<ValidationError> errors, string jsonStringForFallbackIfMissingResource)
+        public JsonSchema GetJsonSchema(string resourceType, IList<ValidationError> errors, string jsonStringForFallbackIfMissingResource)
         {
             JsonSchema schema;
             if (string.IsNullOrEmpty(resourceType))
             {
-                errors.Add(new ValidationMessage(null, "Resource type was null or missing, so we assume there is no response to validate."));
+                errors.Add(new ValidationError(ValidationErrorCode.ResponseResourceTypeMissing, null, "Resource type was null or missing, so we assume there is no response to validate."));
                 schema = JsonSchema.EmptyResponseSchema;
             }
             else if (!this.registeredSchema.TryGetValue(resourceType, out schema) && !string.IsNullOrEmpty(jsonStringForFallbackIfMissingResource))

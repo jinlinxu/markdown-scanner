@@ -49,17 +49,14 @@ namespace ApiDocs.Validation
         public static async Task<ValidationResults> ValidateServiceResponseAsync(
             this MethodDefinition method,
             ScenarioDefinition[] scenarios,
-            IServiceAccount account,
-            AuthenicationCredentials credentials, 
+            IServiceAccount account,            
             ValidationOptions options = null)
         {
             if (null == method)
                 throw new ArgumentNullException("method");
             if (null == account)
                 throw new ArgumentNullException("account");
-            if (null == credentials)
-                throw new ArgumentNullException("credentials");
-
+            
             ValidationResults results = new ValidationResults();
 
             if (scenarios.Length == 0)
@@ -89,7 +86,7 @@ namespace ApiDocs.Validation
             {
                 try
                 {
-                    await ValidateMethodWithScenarioAsync(method, scenario, account, credentials, results, options);
+                    await ValidateMethodWithScenarioAsync(method, scenario, account, results, options);
                 }
                 catch (Exception ex)
                 {
@@ -110,7 +107,6 @@ namespace ApiDocs.Validation
             MethodDefinition method,
             ScenarioDefinition scenario,
             IServiceAccount account,
-            AuthenicationCredentials credentials,
             ValidationResults results,
             ValidationOptions options = null)
         {
@@ -120,11 +116,8 @@ namespace ApiDocs.Validation
                 throw new ArgumentNullException("scenario");
             if (null == account)
                 throw new ArgumentNullException("account");
-            if (null == credentials)
-                throw new ArgumentNullException("credentials");
             if (null == results)
                 throw new ArgumentNullException("results");
-
 
             var actionName = scenario.Description;
 
@@ -146,7 +139,7 @@ namespace ApiDocs.Validation
             // Generate the tested request by "previewing" the request and executing
             // all test-setup procedures
             long startTicks = DateTimeOffset.UtcNow.Ticks;
-            var requestPreviewResult = await method.GenerateMethodRequestAsync(scenario, account.BaseUrl, credentials, method.SourceFile.Parent);
+            var requestPreviewResult = await method.GenerateMethodRequestAsync(scenario, method.SourceFile.Parent, account);
             TimeSpan generateMethodDuration = new TimeSpan(DateTimeOffset.UtcNow.Ticks - startTicks);
             
             // Check to see if an error occured building the request, and abort if so.
@@ -175,7 +168,7 @@ namespace ApiDocs.Validation
 
             // Execute the actual tested method (the result of the method preview call, which made the test-setup requests)
             startTicks = DateTimeOffset.UtcNow.Ticks;
-            var actualResponse = await requestPreview.GetResponseAsync(account.BaseUrl);
+            var actualResponse = await requestPreview.GetResponseAsync(account);
             TimeSpan actualMethodDuration = new TimeSpan(DateTimeOffset.UtcNow.Ticks - startTicks);
 
             var requestResults = results[actionName];
@@ -191,7 +184,6 @@ namespace ApiDocs.Validation
                 new ValidationError[]
                 { new ValidationMessage(null, "HTTP Response:\r\n{0}", actualResponse.FullText(false)) });
             requestResults.Duration = actualMethodDuration;
-           
 
             // Perform validation on the method's actual response
             ValidationError[] errors;

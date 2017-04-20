@@ -50,7 +50,7 @@ namespace ApiDocs.ConsoleApp
         public PrintOptions PrintVerbOptions { get; set; }
 
         [VerbOption(VerbCheckLinks, HelpText = "Verify links in the documentation aren't broken.")]
-        public DocSetOptions CheckLinksVerb { get; set; }
+        public BasicCheckOptions CheckLinksVerb { get; set; }
 
         [VerbOption(VerbDocs, HelpText = "Check for errors in the documentation (resources + examples).")]
         public BasicCheckOptions CheckDocsVerb { get; set; }
@@ -98,13 +98,18 @@ namespace ApiDocs.ConsoleApp
         [Option("parameters", HelpText = "Specify additional page variables that are used by the publishing engine. URL encoded: key=value&key2=value2.")]
         public string AdditionalPageParameters { get; set; }
 
-        public Dictionary<string,object> PageParameterDict {
+        [Option("print-failures-only", HelpText = "Only prints test failures to the console.")]
+        public bool PrintFailuresOnly { get; set; }
+
+
+
+        public Dictionary<string, string> PageParameterDict {
             get
             {
                 if (string.IsNullOrEmpty(AdditionalPageParameters))
                     return null;
 
-                var data = new Dictionary<string, object>();
+                var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
                 var parameters = Validation.Http.HttpParser.ParseQueryString(AdditionalPageParameters);
                 foreach (var key in parameters.AllKeys)
@@ -200,7 +205,7 @@ namespace ApiDocs.ConsoleApp
         [Option('m', "method", HelpText = "Name of the method to test. If omitted, all defined methods are tested.", MutuallyExclusiveSet="fileOrMethod")]
         public string MethodName { get; set; }
 
-        [Option("file", HelpText="Name of the files to test. Wildcard(*) is allowed. If missing, all methods are tested.", MutuallyExclusiveSet="fileOrMethod")]
+        [Option("file", HelpText="Name of the files to test. Wildcard(*) is allowed. If missing, methods across all files are tested.", MutuallyExclusiveSet="fileOrMethod")]
         public string FileName { get; set; }
 
         [Option("force-all", HelpText="Force all defined scenarios to be executed, even if disabled.")]
@@ -208,6 +213,12 @@ namespace ApiDocs.ConsoleApp
 
         [Option("relax-string-validation", HelpText = "Relax the validation of JSON string properties.")]
         public bool RelaxStringTypeValidation { get; set; }
+
+        [Option("changes-since-branch-only", HelpText="Only perform validation on files changed since the specified branch.")]
+        public string FilesChangedFromOriginalBranch { get; set; }
+
+        [Option("git-path", HelpText="Path to the git executable. Required for changes-since-branch-only.")]
+        public string GitExecutablePath { get; set; }
 
     }
 
@@ -279,7 +290,7 @@ namespace ApiDocs.ConsoleApp
                 account.BaseUrl = this.ServiceRootUrl;
                 return account;
             }
-            catch (InvalidOperationException ex)
+            catch (OAuthAccountException ex)
             {
                 Console.WriteLine("Exception while getting account: {0}", ex.Message);
                 return null;

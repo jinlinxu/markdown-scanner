@@ -1,5 +1,5 @@
 ﻿/*
- * Markdown Scanner
+ * Markdown File Handler - Sample Code
  * Copyright (c) Microsoft Corporation
  * All rights reserved. 
  * 
@@ -23,37 +23,28 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-namespace ApiDocs.ConsoleApp
+namespace ApiDocs.Validation.Params
 {
-    using ApiDocs.ConsoleApp.Auth;
-    using ApiDocs.Validation.Config;
-    using Newtonsoft.Json;
-    using ApiDocs.Validation;
+    using System;
+    using System.Runtime.Serialization;
 
-    public class AppConfigFile : ConfigFile
+    [Serializable]
+    internal class PlaceholderValueNotFoundException : Exception
     {
-        [JsonProperty("accounts")]
-        public OAuthAccount[] Accounts { get; set; }
-
-        [JsonProperty("checkServiceEnabledBranches")]
-        public string[] CheckServiceEnabledBranches { get; set; }
-
-        public override bool IsValid
+        public PlaceholderValueNotFoundException()
         {
-            get { return null != this.Accounts || null != this.CheckServiceEnabledBranches; }
         }
 
-        public override void LoadComplete()
+        public PlaceholderValueNotFoundException(string message) : base(message)
         {
-            AppConfigFile.ReplaceEnvironmentVariablesInAccounts(this.Accounts);
         }
 
-        private static void ReplaceEnvironmentVariablesInAccounts(OAuthAccount[] accounts)
+        public PlaceholderValueNotFoundException(string message, Exception innerException) : base(message, innerException)
         {
-            foreach(var account in accounts)
-            {
-                account.ReplaceEnvironmentVariables();
-            }
+        }
+
+        protected PlaceholderValueNotFoundException(SerializationInfo info, StreamingContext context) : base(info, context)
+        {
         }
     }
 }

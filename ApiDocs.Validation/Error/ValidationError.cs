@@ -112,7 +112,10 @@ namespace ApiDocs.Validation.Error
         RequiredDocumentHeaderMissing,
         DocumentHeaderInWrongPosition,
         SkippedSimilarErrors,
-        RequiredScopesMissing
+        RequiredScopesMissing,
+        AnnotationParserException,
+        DuplicateMethodIdentifier,
+        ContentFormatException
     }
 
     public class ValidationError
@@ -126,7 +129,14 @@ namespace ApiDocs.Validation.Error
         {
             this.Code = code;
             this.Source = source;
-            this.Message = string.Format(messageformat, formatParams);
+            try
+            {
+                this.Message = string.Format(messageformat, formatParams);
+            }
+            catch
+            {
+                this.Message = messageformat;
+            }
         }
 
         public static ValidationError CreateError(bool isWarning, ValidationErrorCode code, string source, string messageFormat, params object[] formatParams)

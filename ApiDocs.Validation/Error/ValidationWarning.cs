@@ -38,4 +38,20 @@ namespace ApiDocs.Validation.Error
 
         public override bool IsError { get { return false; } }
     }
+
+
+    public class UndocumentedPropertyWarning : ValidationWarning
+    {
+        public UndocumentedPropertyWarning(string source, string propertyName, ParameterDataType propertyType, string resourceName)
+            : base(ValidationErrorCode.AdditionalPropertyDetected, source, "Undocumented property '{0}' [{1}] was not expected on resource {2}.", propertyName, propertyType, resourceName)
+        {
+            this.PropertyName = propertyName;
+            this.PropertyType = propertyType;
+            this.ResourceName = resourceName;
+        }
+
+        public string PropertyName { get; private set; }
+        public ParameterDataType PropertyType { get; private set; }
+        public string ResourceName { get; private set; }
+    }
 }

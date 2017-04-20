@@ -58,6 +58,8 @@ namespace ApiDocs.ConsoleApp
         // Set to true to disable returning an error code when the app exits.
         private static bool IgnoreErrors { get; set; }
 
+        private static List<UndocumentedPropertyWarning> DiscoveredUndocumentedProperties = new List<UndocumentedPropertyWarning>();
+
         static void Main(string[] args)
         {
             Logging.ProviderLogger(new ConsoleAppLogger());
@@ -66,7 +68,7 @@ namespace ApiDocs.ConsoleApp
             FancyConsole.WriteLine();
             if (args.Length > 0)
                 FancyConsole.WriteLine("Command line: " + args.ComponentsJoinedByString(" "));
-            
+
 
             string verbName = null;
             BaseOptions verbOptions = null;
@@ -92,18 +94,7 @@ namespace ApiDocs.ConsoleApp
             }
 #endif
 
-            if (!string.IsNullOrEmpty(verbOptions.AppVeyorServiceUrl))
-            {
-                BuildWorker.UrlEndPoint = new Uri(verbOptions.AppVeyorServiceUrl);
-            }
-
-            var commandOptions = verbOptions as DocSetOptions;
-            if (null != commandOptions)
-            {
-                FancyConsole.WriteVerboseOutput = commandOptions.EnableVerboseOutput;
-            }
-
-            FancyConsole.LogFileName = verbOptions.LogFile;
+            SetStateFromOptions(verbOptions);
 
             var task = Task.Run(() => RunInvokedMethodAsync(options, verbName, verbOptions));
             try
@@ -115,6 +106,45 @@ namespace ApiDocs.ConsoleApp
                 FancyConsole.WriteLine(FancyConsole.ConsoleErrorColor, "Uncaught exception is causing a crash: {0}", ex);
                 Exit(failure: true, customExitCode: 40);
             }
+        }
+
+        private static void SetStateFromOptions(BaseOptions verbOptions)
+        {
+            if (!string.IsNullOrEmpty(verbOptions.AppVeyorServiceUrl))
+            {
+                BuildWorker.UrlEndPoint = new Uri(verbOptions.AppVeyorServiceUrl);
+            }
+
+            var commandOptions = verbOptions as DocSetOptions;
+            if (null != commandOptions)
+            {
+                FancyConsole.WriteVerboseOutput = commandOptions.EnableVerboseOutput;
+            }
+
+            var checkOptions = verbOptions as BasicCheckOptions;
+            if (null != checkOptions)
+            {
+                if (!string.IsNullOrEmpty(checkOptions.FilesChangedFromOriginalBranch))
+                {
+                    if (string.IsNullOrEmpty(checkOptions.GitExecutablePath))
+                    {
+                        var foundPath = GitHelper.FindGitLocation();
+                        if (null == foundPath)
+                        {
+                            FancyConsole.WriteLine(FancyConsole.ConsoleErrorColor, "To use changes-since-branch-only, git-path must be specified.");
+                            Exit(failure: true, customExitCode: 41);
+                        }
+                        else
+                        {
+                            FancyConsole.WriteLine(FancyConsole.ConsoleDefaultColor, $"Using GIT executable: {foundPath}");
+                            checkOptions.GitExecutablePath = foundPath;
+                        }
+
+                    }
+                }
+            }
+
+            FancyConsole.LogFileName = verbOptions.LogFile;
         }
 
         public static void LoadCurrentConfiguration(DocSetOptions options)
@@ -138,7 +168,7 @@ namespace ApiDocs.ConsoleApp
             {
                 var error = new ValidationError(ValidationErrorCode.MissingRequiredArguments, null, "Command line is missing required arguments: {0}", missingProps.ComponentsJoinedByString(", "));
                 FancyConsole.WriteLine(origCommandLineOpts.GetUsage(invokedVerb));
-                await WriteOutErrorsAndFinishTestAsync(new ValidationError[] { error }, options.SilenceWarnings);
+                await WriteOutErrorsAndFinishTestAsync(new ValidationError[] { error }, options.SilenceWarnings, printFailuresOnly: options.PrintFailuresOnly);
                 Exit(failure: true);
             }
 
@@ -152,7 +182,7 @@ namespace ApiDocs.ConsoleApp
                     await PrintDocInformationAsync((PrintOptions)options);
                     break;
                 case CommandLineOptions.VerbCheckLinks:
-                    returnSuccess = await CheckLinksAsync((DocSetOptions)options);
+                    returnSuccess = await CheckLinksAsync((BasicCheckOptions)options);
                     break;
                 case CommandLineOptions.VerbDocs:
                     returnSuccess = await CheckDocsAsync((BasicCheckOptions)options);
@@ -232,7 +262,12 @@ namespace ApiDocs.ConsoleApp
             FancyConsole.VerboseWriteLine("Scanning documentation files...");
             ValidationError[] loadErrors;
 
-            string tagsToInclude =  options.PageParameterDict.ValueForKey<string>("tags", StringComparison.OrdinalIgnoreCase) ?? string.Empty;
+            string tagsToInclude;
+            if (null == options.PageParameterDict || !options.PageParameterDict.TryGetValue("tags", out tagsToInclude))
+            {
+                tagsToInclude = String.Empty;
+            }
+
             if (!set.ScanDocumentation(tagsToInclude, out loadErrors))
             {
                 FancyConsole.WriteLine("Errors detected while parsing documentation set:");
@@ -406,7 +441,7 @@ namespace ApiDocs.ConsoleApp
         /// </summary>
         /// <param name="options"></param>
         /// <param name="docs"></param>
-        private static async Task<bool> CheckLinksAsync(DocSetOptions options, DocSet docs = null)
+        private static async Task<bool> CheckLinksAsync(BasicCheckOptions options, DocSet docs = null)
         {
             const string testName = "Check-links";
             var docset = docs ?? await GetDocSetAsync(options);
@@ -415,10 +450,17 @@ namespace ApiDocs.ConsoleApp
                 return false;
 
 
-            TestReport.StartTest(testName);
+            string[] interestingFiles = null;
+            if (!string.IsNullOrEmpty(options.FilesChangedFromOriginalBranch))
+            {
+                GitHelper helper = new GitHelper(options.GitExecutablePath, options.DocumentationSetPath);
+                interestingFiles = helper.FilesChangedFromBranch(options.FilesChangedFromOriginalBranch);
+            }
 
+            TestReport.StartTest(testName);
+            
             ValidationError[] errors;
-            docset.ValidateLinks(options.EnableVerboseOutput, out errors);
+            docset.ValidateLinks(options.EnableVerboseOutput, interestingFiles, out errors);
 
             foreach (var error in errors)
             {
@@ -434,7 +476,7 @@ namespace ApiDocs.ConsoleApp
                 await TestReport.LogMessageAsync(message, category);
             }
 
-            return await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, successMessage: "No link errors detected.", testName: testName);
+            return await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, successMessage: "No link errors detected.", testName: testName, printFailuresOnly: options.PrintFailuresOnly);
         }
 
         /// <summary>
@@ -514,7 +556,7 @@ namespace ApiDocs.ConsoleApp
             {
                 detectedErrors.AddRange(doc.CheckDocumentStructure());
             }
-            await WriteOutErrorsAndFinishTestAsync(detectedErrors, options.SilenceWarnings, "    ", "No errors.", false, "Verify document structure", "Warnings detected", "Errors detected");
+            await WriteOutErrorsAndFinishTestAsync(detectedErrors, options.SilenceWarnings, "    ", "Passed.", false, "Verify document structure", "Warnings detected", "Errors detected", printFailuresOnly: options.PrintFailuresOnly);
             results.IncrementResultCount(detectedErrors);
 
             return results;
@@ -553,7 +595,7 @@ namespace ApiDocs.ConsoleApp
                     ValidationError[] errors;
                     docset.ResourceCollection.ValidateJsonExample(example.Metadata, example.SourceExample, out errors, new ValidationOptions { RelaxedStringValidation = options.RelaxStringTypeValidation });
 
-                    await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, "   ", "No errors.", false, testName, "Warnings detected", "Errors detected");
+                    await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, "   ", "Passed.", false, testName, "Warnings detected", "Errors detected", printFailuresOnly: options.PrintFailuresOnly);
                     results.IncrementResultCount(errors);
                 }
             }
@@ -575,12 +617,13 @@ namespace ApiDocs.ConsoleApp
 
             foreach (var method in methods)
             {
-                var testName = "check-method-syntax: " + method.Identifier;
-                TestReport.StartTest(testName, method.SourceFile.DisplayName);
+                var testName = "API Request: " + method.Identifier;
+                
+                TestReport.StartTest(testName, method.SourceFile.DisplayName, skipPrintingHeader: options.PrintFailuresOnly);
 
                 if (string.IsNullOrEmpty(method.ExpectedResponse))
                 {
-                    await TestReport.FinishTestAsync(testName, TestOutcome.Failed, "Null response where one was expected.");
+                    await TestReport.FinishTestAsync(testName, TestOutcome.Failed, "Null response where one was expected.", printFailuresOnly: options.PrintFailuresOnly);
                     results.FailureCount++;
                     continue;
                 }
@@ -600,11 +643,33 @@ namespace ApiDocs.ConsoleApp
                     errors = new ValidationError[] { new ValidationError(ValidationErrorCode.ExceptionWhileValidatingMethod, method.SourceFile.DisplayName, ex.Message) };
                 }
 
-                await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, "   ", "No errors.", false, testName, "Warnings detected", "Errors detected");
+                await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, "   ", "Passed.", false, testName, "Warnings detected", "Errors detected", printFailuresOnly: options.PrintFailuresOnly);
                 results.IncrementResultCount(errors);
             }
 
             return results;
+        }
+
+        private static DocFile[] GetSelectedFiles(BasicCheckOptions options, DocSet docset)
+        {
+            List<DocFile> files = new List<DocFile>();
+            if (!string.IsNullOrEmpty(options.FilesChangedFromOriginalBranch))
+            {
+                GitHelper helper = new GitHelper(options.GitExecutablePath, options.DocumentationSetPath);
+                var changedFiles = helper.FilesChangedFromBranch(options.FilesChangedFromOriginalBranch);
+                
+                foreach (var filePath in changedFiles)
+                {
+                    var file = docset.LookupFileForPath(filePath);
+                    if (null != file)
+                        files.Add(file);
+                }
+            }
+            else
+            {
+                files.AddRange(docset.Files);
+            }
+            return files.ToArray();
         }
 
         /// <summary>
@@ -616,7 +681,20 @@ namespace ApiDocs.ConsoleApp
         private static MethodDefinition[] FindTestMethods(BasicCheckOptions options, DocSet docset)
         {
             MethodDefinition[] methods = null;
-            if (!string.IsNullOrEmpty(options.MethodName))
+            if (!string.IsNullOrEmpty(options.FilesChangedFromOriginalBranch))
+            {
+                GitHelper helper = new GitHelper(options.GitExecutablePath, options.DocumentationSetPath);
+                var changedFiles = helper.FilesChangedFromBranch(options.FilesChangedFromOriginalBranch);
+                List<MethodDefinition> foundMethods = new List<MethodDefinition>();
+                foreach (var filePath in changedFiles)
+                {
+                    var file = docset.LookupFileForPath(filePath);
+                    if (null != file)
+                        foundMethods.AddRange(file.Requests);
+                }
+                return foundMethods.ToArray();
+            }
+            else if (!string.IsNullOrEmpty(options.MethodName))
             {
                 methods = FindMethods(docset, options.MethodName);
                 if (null == methods || methods.Length == 0)
@@ -675,10 +753,17 @@ namespace ApiDocs.ConsoleApp
         /// <param name="warningsMessage"></param>
         /// <param name="errorsMessage"></param>
         /// <returns></returns>
-        private static async Task<bool> WriteOutErrorsAndFinishTestAsync(IEnumerable<ValidationError> errors, bool silenceWarnings, string indent = "", string successMessage = null, bool endLineBeforeWriting = false, string testName = null, string warningsMessage = null, string errorsMessage = null)
+        private static async Task<bool> WriteOutErrorsAndFinishTestAsync(IEnumerable<ValidationError> errors, bool silenceWarnings, string indent = "", string successMessage = null, bool endLineBeforeWriting = false, string testName = null, string warningsMessage = null, string errorsMessage = null, bool printFailuresOnly = false)
         {
             var validationErrors = errors as ValidationError[] ?? errors.ToArray();
-            WriteMessages(validationErrors, silenceWarnings, indent, endLineBeforeWriting);
+
+            string writeMessageHeader = null;
+            if (printFailuresOnly)
+            {
+                writeMessageHeader = $"Test {testName} results:";
+            }
+
+            WriteMessages(validationErrors, silenceWarnings, indent, endLineBeforeWriting, beforeWriteHeader: writeMessageHeader);
 
             TestOutcome outcome = TestOutcome.None;
             string outputMessage = null;
@@ -707,7 +792,7 @@ namespace ApiDocs.ConsoleApp
                     outputMessage = "Multiple warnings occured.";
                 outcome = TestOutcome.Passed;
             }
-            else
+            else 
             {
                 // write success message!
                 outputMessage = successMessage;
@@ -718,7 +803,7 @@ namespace ApiDocs.ConsoleApp
             if (null != testName)
             {
                 var errorMessage = (from e in validationErrors select e.ErrorText).ComponentsJoinedByString("\r\n");
-                await TestReport.FinishTestAsync(testName, outcome, outputMessage, stdOut: errorMessage);
+                await TestReport.FinishTestAsync(testName, outcome, outputMessage, stdOut: errorMessage, printFailuresOnly: printFailuresOnly);
             }
 
             return outcome == TestOutcome.Passed;
@@ -731,10 +816,13 @@ namespace ApiDocs.ConsoleApp
         /// <param name="errorsOnly"></param>
         /// <param name="indent"></param>
         /// <param name="endLineBeforeWriting"></param>
-        private static void WriteMessages(ValidationError[] validationErrors, bool errorsOnly = false, string indent = "", bool endLineBeforeWriting = false)
+        private static void WriteMessages(ValidationError[] validationErrors, bool errorsOnly = false, string indent = "", bool endLineBeforeWriting = false, string beforeWriteHeader = null)
         {
+            bool writtenHeader = false;
             foreach (var error in validationErrors)
             {
+                RecordUndocumentedProperties(error);
+
                 // Skip messages if verbose output is off
                 if (!error.IsWarning && !error.IsError && !FancyConsole.WriteVerboseOutput)
                 {
@@ -752,7 +840,27 @@ namespace ApiDocs.ConsoleApp
                     FancyConsole.WriteLine();
                 }
 
+                if (!writtenHeader && beforeWriteHeader != null)
+                {
+                    writtenHeader = true;
+                    FancyConsole.WriteLine(beforeWriteHeader);
+                }
                 WriteValidationError(indent, error);
+            }
+        }
+
+        private static void RecordUndocumentedProperties(ValidationError error)
+        {
+            if (error is UndocumentedPropertyWarning)
+            {
+                DiscoveredUndocumentedProperties.Add((UndocumentedPropertyWarning)error);
+            }
+            else if (error.InnerErrors != null && error.InnerErrors.Any())
+            {
+                foreach(var innerError in error.InnerErrors)
+                {
+                    RecordUndocumentedProperties(innerError);
+                }
             }
         }
 
@@ -793,7 +901,7 @@ namespace ApiDocs.ConsoleApp
             if (!string.IsNullOrEmpty(options.BranchName))
             {
                 string[] validBranches = null;
-                if (null != CurrentConfiguration) 
+                if (null != CurrentConfiguration)
                     validBranches = CurrentConfiguration.CheckServiceEnabledBranches;
 
                 if (null != validBranches && !validBranches.Contains(options.BranchName))
@@ -825,7 +933,7 @@ namespace ApiDocs.ConsoleApp
                 ValidationConfig.ODataMetadataLevel = options.ODataMetadataLevel;
             }
 
-            if (options.FoundAccounts == null || !options.FoundAccounts.Any())
+            if (options.FoundAccounts == null || !options.FoundAccounts.Any(x=>x.Enabled))
             {
                 RecordError("No account was found. Cannot connect to the service.");
                 return false;
@@ -836,14 +944,17 @@ namespace ApiDocs.ConsoleApp
                     x => string.IsNullOrEmpty(options.AccountName)
                         ? x.Enabled
                         : options.AccountName.Equals(x.Name));
-            
+
             var methods = FindTestMethods(options, docset);
 
             Dictionary<string, CheckResults> results = new Dictionary<string, CheckResults>();
             foreach (var account in accountsToProcess)
             {
                 var accountResults = await CheckMethodsForAccountAsync(options, account, methods, docset);
-                results[account.Name] = accountResults;
+                if (null != accountResults)
+                {
+                    results[account.Name] = accountResults;
+                }
             }
 
             // Disable http logging
@@ -853,14 +964,43 @@ namespace ApiDocs.ConsoleApp
                 httpLogging.ClosePackage();
             }
 
-            // TODO: Print out account summary if multiple accounts were used
-            foreach(var key in results.Keys)
+            // Print out account summary if multiple accounts were used
+            foreach (var key in results.Keys)
             {
                 FancyConsole.Write("Account {0}: ", key);
                 results[key].PrintToConsole(false);
             }
 
+            // Print out undocumented properties, if any where found.
+            WriteUndocumentedProperties();
+
             return !results.Values.Any(x => x.WereFailures);
+        }
+
+        private static void WriteUndocumentedProperties()
+        {
+            // Collapse all the properties we've discovered down into an easy-to-digest list of properties and resources
+            Dictionary<string, HashSet<string>> undocumentedProperties = new Dictionary<string, HashSet<string>>();
+            foreach (var props in DiscoveredUndocumentedProperties)
+            {
+                HashSet<string> foundPropertiesOnResource;
+                if (!undocumentedProperties.TryGetValue(props.ResourceName, out foundPropertiesOnResource))
+                {
+                    foundPropertiesOnResource = new HashSet<string>();
+                    undocumentedProperties.Add(props.ResourceName, foundPropertiesOnResource);
+                }
+                foundPropertiesOnResource.Add(props.PropertyName);
+            }
+
+            string seperator = ", ";
+            if (undocumentedProperties.Any())
+            {
+                FancyConsole.WriteLine(FancyConsole.ConsoleWarningColor, "The following undocumented properties were detected:");
+                foreach (var resource in undocumentedProperties)
+                {
+                    Console.WriteLine($"Resource {resource.Key}: {resource.Value.ComponentsJoinedByString(seperator)}");
+                }
+            }
         }
 
         /// <summary>
@@ -887,8 +1027,7 @@ namespace ApiDocs.ConsoleApp
                 RecordError(ex.Message);
                 return null;
             }
-
-            AuthenicationCredentials credentials = account.CreateCredentials();
+            
             int concurrentTasks = commandLineOptions.ParallelTests ? ParallelTaskCount : 1;
 
             CheckResults docSetResults = new CheckResults();
@@ -904,7 +1043,7 @@ namespace ApiDocs.ConsoleApp
                 ScenarioDefinition[] scenarios = docset.TestScenarios.ScenariosForMethod(method);
 
                 // Test these scenarios and validate responses
-                ValidationResults results = await method.ValidateServiceResponseAsync(scenarios, account, credentials, 
+                ValidationResults results = await method.ValidateServiceResponseAsync(scenarios, account, 
                     new ValidationOptions {
                         RelaxedStringValidation = commandLineOptions.RelaxStringTypeValidation,
                         IgnoreRequiredScopes = commandLineOptions.IgnoreRequiredScopes
@@ -989,6 +1128,7 @@ namespace ApiDocs.ConsoleApp
                                     "    ",
                                     FancyConsole.ConsoleDefaultColor,
                                     message.ErrorText);
+                            RecordUndocumentedProperties(message);
                         }
 
                         if (options.SilenceWarnings && scenario.Outcome == ValidationOutcome.Warning)
@@ -1273,7 +1413,7 @@ namespace ApiDocs.ConsoleApp
                 results.IncrementResultCount(errors);
                 collectedErrors.AddRange(errors);
 
-                await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, successMessage: " no errors.");
+                await WriteOutErrorsAndFinishTestAsync(errors, options.SilenceWarnings, successMessage: " passed.", printFailuresOnly: options.PrintFailuresOnly);
             }
 
             if (options.IgnoreWarnings)

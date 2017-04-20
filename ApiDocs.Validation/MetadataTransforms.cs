@@ -1,4 +1,5 @@
-﻿/*
+﻿
+/*
  * Markdown Scanner
  * Copyright (c) Microsoft Corporation
  * All rights reserved. 
@@ -23,37 +24,36 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-namespace ApiDocs.ConsoleApp
+namespace ApiDocs.Validation
 {
-    using ApiDocs.ConsoleApp.Auth;
-    using ApiDocs.Validation.Config;
     using Newtonsoft.Json;
-    using ApiDocs.Validation;
+    using System.Collections.Generic;
 
-    public class AppConfigFile : ConfigFile
+    public class AccountTransforms
     {
-        [JsonProperty("accounts")]
-        public OAuthAccount[] Accounts { get; set; }
+        [JsonProperty("request")]
+        public MetadataTransforms Request { get; set; }
 
-        [JsonProperty("checkServiceEnabledBranches")]
-        public string[] CheckServiceEnabledBranches { get; set; }
+        [JsonProperty("response")]
+        public MetadataTransforms Response { get; set; }
 
-        public override bool IsValid
-        {
-            get { return null != this.Accounts || null != this.CheckServiceEnabledBranches; }
-        }
-
-        public override void LoadComplete()
-        {
-            AppConfigFile.ReplaceEnvironmentVariablesInAccounts(this.Accounts);
-        }
-
-        private static void ReplaceEnvironmentVariablesInAccounts(OAuthAccount[] accounts)
-        {
-            foreach(var account in accounts)
-            {
-                account.ReplaceEnvironmentVariables();
-            }
-        }
     }
+
+    public class MetadataTransforms
+    {
+        [JsonProperty("properties")]
+        public Dictionary<string, string> Properties { get; set; }
+
+        [JsonProperty("actions")]
+        public ActionTransforms Actions { get; set; }
+
+    }
+
+    public class ActionTransforms
+    {
+        [JsonProperty("prefix")]
+        public string Prefix { get; set; }
+    }
+
+    
 }

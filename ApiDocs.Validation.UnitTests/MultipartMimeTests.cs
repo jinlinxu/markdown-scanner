@@ -23,37 +23,28 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-namespace ApiDocs.ConsoleApp
+namespace ApiDocs.Validation.UnitTests
 {
-    using ApiDocs.ConsoleApp.Auth;
-    using ApiDocs.Validation.Config;
-    using Newtonsoft.Json;
-    using ApiDocs.Validation;
+    using NUnit.Framework;
+    using MultipartMime;
 
-    public class AppConfigFile : ConfigFile
+    [TestFixture]
+    public class MultipartMimeTests
     {
-        [JsonProperty("accounts")]
-        public OAuthAccount[] Accounts { get; set; }
-
-        [JsonProperty("checkServiceEnabledBranches")]
-        public string[] CheckServiceEnabledBranches { get; set; }
-
-        public override bool IsValid
+        [Test]
+        public void RoundtripTest()
         {
-            get { return null != this.Accounts || null != this.CheckServiceEnabledBranches; }
-        }
+            MultipartMime.MultipartMimeContent message = new MultipartMime.MultipartMimeContent();
+            message.Parts.Add(new MultipartMime.MessagePart { Id = "<metadata>", ContentType = new MimeContentType("application/json"), Body = "{\"foo\": \"bar\"}" });
+            message.Parts.Add(new MultipartMime.MessagePart { Id = "<content", ContentType = new MimeContentType("text/plain"), Body = "This is test message content" });
 
-        public override void LoadComplete()
-        {
-            AppConfigFile.ReplaceEnvironmentVariablesInAccounts(this.Accounts);
-        }
+            string body1 = message.ToString();
 
-        private static void ReplaceEnvironmentVariablesInAccounts(OAuthAccount[] accounts)
-        {
-            foreach(var account in accounts)
-            {
-                account.ReplaceEnvironmentVariables();
-            }
+            MultipartMime.MultipartMimeContent message2 = new MultipartMime.MultipartMimeContent(message.ContentType, body1);
+            string body2 = message2.ToString();
+
+            Assert.AreEqual(body1.Length, body2.Length, "Body length changed between roundtrips.");
+            Assert.AreEqual(body1, body2, "Body text was different between roundtrips.");
         }
     }
 }

@@ -23,37 +23,29 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-namespace ApiDocs.ConsoleApp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using NUnit.Framework;
+using ApiDocs.Validation.Json;
+using System.Collections.Specialized;
+
+namespace ApiDocs.Validation.UnitTests
 {
-    using ApiDocs.ConsoleApp.Auth;
-    using ApiDocs.Validation.Config;
-    using Newtonsoft.Json;
-    using ApiDocs.Validation;
-
-    public class AppConfigFile : ConfigFile
+    [TestFixture]
+    public class JsonRewriteTests
     {
-        [JsonProperty("accounts")]
-        public OAuthAccount[] Accounts { get; set; }
-
-        [JsonProperty("checkServiceEnabledBranches")]
-        public string[] CheckServiceEnabledBranches { get; set; }
-
-        public override bool IsValid
+        [Test]
+        public void BasicRewrite()
         {
-            get { return null != this.Accounts || null != this.CheckServiceEnabledBranches; }
-        }
-
-        public override void LoadComplete()
-        {
-            AppConfigFile.ReplaceEnvironmentVariablesInAccounts(this.Accounts);
-        }
-
-        private static void ReplaceEnvironmentVariablesInAccounts(OAuthAccount[] accounts)
-        {
-            foreach(var account in accounts)
-            {
-                account.ReplaceEnvironmentVariables();
-            }
+            var json = "{ \"name\": \"foo\", \"@microsoft.graph.downloadUrl\": \"https://foo/bar/baz\", \"@microsoft.graph.conflictBehavior\": \"fail\" }";
+            var map = new Dictionary<string, string>();
+            map.Add("@microsoft.graph.downloadUrl", "@oneDrive.downloadUrl");
+            map.Add("@microsoft.graph.", "@oneDrive.");
+            var output = JsonRewriter.RewriteJsonProperties(json, map);
         }
     }
 }
