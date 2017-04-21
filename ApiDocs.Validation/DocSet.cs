@@ -37,6 +37,7 @@ namespace ApiDocs.Validation
     using ApiDocs.Validation.Json;
     using ApiDocs.Validation.Params;
     using Newtonsoft.Json;
+    using DeploymentTools;
 
     public class DocSet
     {
@@ -243,9 +244,13 @@ namespace ApiDocs.Validation
                         null,
                         "No markdown documentation was found in the current path."));
             }
-
+            TimeManager tm = TimeManager.CreateInstance("apiDocs.timestamp");
             foreach (var file in this.Files)
             {
+                if(!tm.IsModified(file.FullPath))
+                {
+                    continue;
+                }
                 ValidationError[] parseErrors;
                 if (!file.Scan(tags, out parseErrors))
                 {

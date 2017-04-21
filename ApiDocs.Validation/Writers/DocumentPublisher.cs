@@ -33,6 +33,7 @@ namespace ApiDocs.Validation.Writers
     using System.Linq;
     using System.Threading.Tasks;
     using ApiDocs.Validation.Error;
+    using DeploymentTools;
 
     public abstract class DocumentPublisher
 	{
@@ -196,7 +197,9 @@ namespace ApiDocs.Validation.Writers
 
             var pathDisplayName = this.RelativeDirectoryPath(directory, true);
 
-			var filesInDirectory = directory.GetFiles();
+            TimeManager tm = TimeManager.CreateInstance("apiDocs.timestamp");
+
+            var filesInDirectory = directory.GetFiles();
 			if (filesInDirectory.Length > 0)
             {
                 EnsureDirectoryExists(directory, destinationRoot, pathDisplayName, isRootPath);
@@ -206,6 +209,16 @@ namespace ApiDocs.Validation.Writers
 
 			foreach (var file in filesInDirectory)
 			{
+                if(!tm.IsModified(file.FullName))
+                {
+                    continue;
+                }
+                else
+                {
+                    tm.UpdateTimeStamp(file.FullName);
+                    Console.WriteLine("Convert file:" + file.FullName);
+                }
+
 				if (this.IsInternalPath(file))
 				{
 				    this.LogMessage(new ValidationMessage(file.Name, "Source file was on the internal path list, skipped."));
