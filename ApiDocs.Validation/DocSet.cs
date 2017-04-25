@@ -252,7 +252,8 @@ namespace ApiDocs.Validation
                     continue;
                 }
                 ValidationError[] parseErrors;
-                if (!file.Scan(tags, out parseErrors))
+                file.Scan(tags, out parseErrors);
+                if (parseErrors != null)
                 {
                     detectedErrors.AddRange(parseErrors);
                 }
@@ -402,7 +403,7 @@ namespace ApiDocs.Validation
         /// <param name="includeWarnings"></param>
         /// <param name="errors"></param>
         /// <returns></returns>
-        public bool ValidateLinks(bool includeWarnings, string[] relativePathForFiles, out ValidationError[] errors)
+        public bool ValidateLinks(bool includeWarnings, string[] relativePathForFiles, out ValidationError[] errors, bool requireFilenameCaseMatch)
         {
             List<ValidationError> foundErrors = new List<ValidationError>();
 
@@ -427,7 +428,7 @@ namespace ApiDocs.Validation
             {
                 ValidationError[] localErrors;
                 string [] linkedPages;
-                if (!file.ValidateNoBrokenLinks(includeWarnings, out localErrors, out linkedPages))
+                if (!file.ValidateNoBrokenLinks(includeWarnings, out localErrors, out linkedPages, requireFilenameCaseMatch))
                 {
                     foundErrors.AddRange(localErrors);
                 }

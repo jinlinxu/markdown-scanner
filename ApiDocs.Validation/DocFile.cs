@@ -173,7 +173,9 @@ namespace ApiDocs.Validation
             
             try
             {
-                this.TransformMarkdownIntoBlocksAndLinks(this.GetContentsOfFile(tags));
+				string fileContents = this.GetContentsOfFile(tags);
+				fileContents = this.ParseAndRemoveYamlFrontMatter(fileContents);
+				this.TransformMarkdownIntoBlocksAndLinks(fileContents);
             }
             catch (IOException ioex)
             {
@@ -190,6 +192,83 @@ namespace ApiDocs.Validation
 
             return this.ParseMarkdownBlocks(out errors);
         }
+
+		/// <summary>
+		/// Parses the file contents and removes yaml front matter from the markdown.
+		/// </summary>
+		/// <param name="contents">Contents.</param>
+		private string ParseAndRemoveYamlFrontMatter(string contents)
+		{
+			const string YamlFrontMatterHeader = "---";
+			using (StringReader reader = new StringReader(contents))
+			{
+				string currentLine = reader.ReadLine();
+				System.Text.StringBuilder frontMatter = new System.Text.StringBuilder();
+				YamlFrontMatterDetectionState currentState = YamlFrontMatterDetectionState.NotDetected;
+				while (currentLine != null && currentState != YamlFrontMatterDetectionState.SecondTokenFound)
+				{
+					string trimmedCurrentLine = currentLine.Trim();
+					switch (currentState)
+					{
+						case YamlFrontMatterDetectionState.NotDetected:
+							if (!string.IsNullOrWhiteSpace(trimmedCurrentLine) && trimmedCurrentLine != YamlFrontMatterHeader)
+							{
+								// This file doesn't have YAML front matter, so we just return the full contents of the file
+								return contents;
+							}
+							else if (trimmedCurrentLine == YamlFrontMatterHeader)
+							{
+								currentState = YamlFrontMatterDetectionState.FirstTokenFound;
+							}
+							break;
+						case YamlFrontMatterDetectionState.FirstTokenFound:
+							if (trimmedCurrentLine == YamlFrontMatterHeader)
+							{
+								// Found the end of the YAML front matter, so move to the final state
+								currentState = YamlFrontMatterDetectionState.SecondTokenFound;
+							}
+							else
+							{
+								// Store the YAML data into our header
+								frontMatter.AppendLine(currentLine);
+							}
+							break;
+
+						case YamlFrontMatterDetectionState.SecondTokenFound:
+							break;
+					}
+
+					if (currentState != YamlFrontMatterDetectionState.SecondTokenFound)
+					{
+						currentLine = reader.ReadLine();
+					}
+				}
+
+				if (currentState == YamlFrontMatterDetectionState.SecondTokenFound)
+				{
+					// Parse YAML metadata
+					ParseYamlMetadata(frontMatter.ToString());
+					return reader.ReadToEnd();
+				}
+				else
+				{
+					// Something went wrong along the way, so we just return the full file
+					return contents;
+				}
+			}
+		}
+
+		private void ParseYamlMetadata(string yamlMetadata)
+		{
+			// TODO: Implement YAML parsing
+		}
+
+		private enum YamlFrontMatterDetectionState
+		{
+			NotDetected,
+			FirstTokenFound,
+			SecondTokenFound
+		}
 
         private static bool IsHeaderBlock(Block block, int maxDepth = 2)
         {
@@ -617,7 +696,7 @@ namespace ApiDocs.Validation
                                    select (TableDefinition)s;
 
             this.PostProcessAuthScopes(elementsFoundInDocument);
-            PostProcessResources(foundResources, foundTables);
+            PostProcessResources(foundResources, foundTables, detectedErrors);
             this.PostProcessMethods(foundMethods, foundTables, detectedErrors);
 
             postProcessingErrors = detectedErrors.ToArray();
@@ -637,7 +716,7 @@ namespace ApiDocs.Validation
             this.AuthScopes = foundScopes.ToArray();
         }
 
-        private static void PostProcessResources(IEnumerable<ResourceDefinition> foundResources, IEnumerable<TableDefinition> foundTables)
+        private void PostProcessResources(IEnumerable<ResourceDefinition> foundResources, IEnumerable<TableDefinition> foundTables, List<ValidationError> detectedErrors)
         {
             if (foundResources.Count() == 1)
             {
@@ -652,6 +731,8 @@ namespace ApiDocs.Validation
                             MergeParametersIntoCollection(
                                 onlyResource.Parameters,
                                 table.Rows.Cast<ParameterDefinition>(), 
+                                onlyResource.Name,
+                                detectedErrors,
                                 table.Type == TableBlockType.ResourceNavigationPropertyDescriptions);
                             break;
                     }
@@ -665,9 +746,11 @@ namespace ApiDocs.Validation
         /// </summary>
         /// <param name="collection"></param>
         /// <param name="additionalData"></param>
-        private static void MergeParametersIntoCollection(
+        private void MergeParametersIntoCollection(
             List<ParameterDefinition> collection,
             IEnumerable<ParameterDefinition> additionalData,
+            string resourceName,
+            List<ValidationError> detectedErrors,
             bool addMissingParameters = false)
         {
             foreach (var param in additionalData)
@@ -681,10 +764,17 @@ namespace ApiDocs.Validation
                 }
                 else if (addMissingParameters)
                 {
-                    // TODO: This should be a warning reported by the tool.
+                    Console.WriteLine($"Found property '{param.Name}' in markdown table that wasn't defined in '{resourceName}': {this.DisplayName}");
+                    detectedErrors.Add(new ValidationWarning(ValidationErrorCode.AdditionalPropertyDetected, this.DisplayName, $"Property '{param.Name}' found in markdown table but not in resource definition for '{resourceName}'."));
 
                     // The parameter didn't exist in the collection, so let's add it.
                     collection.Add(param);
+                }
+                else
+                {
+                    // Oops, we didn't find the property in the resource definition
+                    Console.WriteLine($"Found property '{param.Name}' in markdown table that wasn't defined in '{resourceName}': {this.DisplayName}");
+                    detectedErrors.Add(new ValidationWarning(ValidationErrorCode.AdditionalPropertyDetected, this.DisplayName, $"Property '{param.Name}' found in markdown table but not in resource definition for '{resourceName}'."));
                 }
             }
         }
@@ -705,27 +795,34 @@ namespace ApiDocs.Validation
             else if (totalMethods == 1)
             {
                 var onlyMethod = foundMethods.Single();
-                SetFoundTablesOnMethod(foundTables, onlyMethod);
+                SetFoundTablesOnMethod(foundTables, onlyMethod, errors);
             }
             else
             {
                 // TODO: Figure out how to map stuff when more than one method exists
                 if (null != errors)
                 {
-                    errors.Add(new ValidationWarning(ValidationErrorCode.UnmappedDocumentElements, null, "Unable to map elements in file {0}", this.DisplayName));
-                    
-                    var unmappedMethods = (from m in foundMethods select m.RequestMetadata.MethodName).ComponentsJoinedByString("\r\n");
-                    if (!string.IsNullOrEmpty(unmappedMethods)) 
-                        errors.Add(new ValidationMessage("Unmapped methods", unmappedMethods));
+                    var unmappedContentsError = new ValidationWarning(ValidationErrorCode.UnmappedDocumentElements, this.DisplayName, "Unable to map some markdown elements into schema.");
 
-                    var unmappedTables = (from t in foundTables select string.Format("{0} - {1}", t.Title, t.Type)).ComponentsJoinedByString("\r\n");
-                    if (!string.IsNullOrEmpty(unmappedTables)) 
-                        errors.Add(new ValidationMessage("Unmapped tables", unmappedTables));
+                    List<ValidationError> innerErrors = new List<ValidationError>();
+                    var unmappedMethods = (from m in foundMethods select m.RequestMetadata.MethodName).ComponentsJoinedByString(", ");
+                    if (!string.IsNullOrEmpty(unmappedMethods))
+                    { 
+                        innerErrors.Add(new ValidationMessage("Unmapped methods", unmappedMethods));
+                    }
+
+                    var unmappedTables = (from t in foundTables select string.Format("{0} - {1}", t.Title, t.Type)).ComponentsJoinedByString(", ");
+                    if (!string.IsNullOrEmpty(unmappedTables))
+                    {
+                        innerErrors.Add(new ValidationMessage("Unmapped tables", unmappedTables));
+                    }
+                    unmappedContentsError.InnerErrors = innerErrors.ToArray();
+                    errors.Add(unmappedContentsError);
                 }
             }
         }
 
-        private static void SetFoundTablesOnMethod(IEnumerable<TableDefinition> foundTables, MethodDefinition onlyMethod)
+        private void SetFoundTablesOnMethod(IEnumerable<TableDefinition> foundTables, MethodDefinition onlyMethod, List<ValidationError> detectedErrors)
         {
             foreach (var table in foundTables)
             {
@@ -736,7 +833,7 @@ namespace ApiDocs.Validation
                         break;
                     case TableBlockType.EnumerationValues:
                         // TODO: Support enumeration values
-                        Console.WriteLine("EnumeratedValues that wasn't handled: {0} on method {1} ", table.Title, onlyMethod.RequestMetadata.MethodName);
+                        detectedErrors.Add(new ValidationWarning(ValidationErrorCode.Unknown, this.DisplayName, $"Table '{table.Title}' for method '{onlyMethod.RequestMetadata.MethodName}' included enum values that weren't parsed."));
                         break;
                     case TableBlockType.ErrorCodes:
                         onlyMethod.Errors = table.Rows.Cast<ErrorDefinition>().ToList();
@@ -751,10 +848,10 @@ namespace ApiDocs.Validation
                         break;
                     case TableBlockType.ResourcePropertyDescriptions:
                     case TableBlockType.ResponseObjectProperties:
-                        Console.WriteLine("Response property descriptions weren't converted: Table '{0}' on method '{1}'", table.Title, onlyMethod.RequestMetadata.MethodName);
+                        detectedErrors.Add(new ValidationWarning(ValidationErrorCode.Unknown, this.DisplayName, $"Table '{table.Title}' for method '{onlyMethod.RequestMetadata.MethodName}' included response properties that were ignored."));
                         break;
                     default:
-                        Console.WriteLine("Something else that wasn't handled: type:{0}, title:{1} on method {2}", table.Type, table.Title, onlyMethod.RequestMetadata.MethodName);
+                        detectedErrors.Add(new ValidationWarning(ValidationErrorCode.Unknown, this.DisplayName, $"Table '{table.Title}' ({table.Type}) for method '{onlyMethod.RequestMetadata.MethodName}' was unsupported and ignored."));
                         break;
                 }
             }
@@ -904,10 +1001,10 @@ namespace ApiDocs.Validation
 
         #region Link Verification
 
-        public bool ValidateNoBrokenLinks(bool includeWarnings, out ValidationError[] errors)
+        public bool ValidateNoBrokenLinks(bool includeWarnings, out ValidationError[] errors, bool requireFilenameCaseMatch)
         {
             string[] files;
-            return this.ValidateNoBrokenLinks(includeWarnings, out errors, out files);
+            return this.ValidateNoBrokenLinks(includeWarnings, out errors, out files, requireFilenameCaseMatch);
         }
 
         /// <summary>
@@ -917,7 +1014,7 @@ namespace ApiDocs.Validation
         /// <param name="errors">Information about broken links</param>
         /// <param name="linkedDocFiles"></param>
         /// <returns>True if all links are valid. Otherwise false</returns>
-        public bool ValidateNoBrokenLinks(bool includeWarnings, out ValidationError[] errors, out string[] linkedDocFiles)
+        public bool ValidateNoBrokenLinks(bool includeWarnings, out ValidationError[] errors, out string[] linkedDocFiles, bool requireFilenameCaseMatch)
         {
             if (!this.HasScanRun)
                 throw new InvalidOperationException("Cannot validate links until Scan() is called.");
@@ -948,7 +1045,7 @@ namespace ApiDocs.Validation
                 }
 
                 string relativeFileName;
-                var result = this.VerifyLink(this.FullPath, link.Definition.url, this.BasePath, out relativeFileName);
+                var result = this.VerifyLink(this.FullPath, link.Definition.url, this.BasePath, out relativeFileName, requireFilenameCaseMatch);
                 string suggestion = (relativeFileName != null) ? $"Did you mean: {relativeFileName}" : string.Empty;
                 switch (result)
                 {
@@ -1000,7 +1097,7 @@ namespace ApiDocs.Validation
             BookmarkSkippedDocFileNotFound
         }
 
-        protected LinkValidationResult VerifyLink(string docFilePath, string linkUrl, string docSetBasePath, out string relativeFileName)
+        protected LinkValidationResult VerifyLink(string docFilePath, string linkUrl, string docSetBasePath, out string relativeFileName, bool requireFilenameCaseMatch)
         {
             relativeFileName = null;
             Uri parsedUri;
@@ -1032,7 +1129,7 @@ namespace ApiDocs.Validation
                 }
                 else
                 {
-                    return this.VerifyRelativeLink(sourceFile, linkUrl, docSetBasePath, out relativeFileName);
+                    return this.VerifyRelativeLink(sourceFile, linkUrl, docSetBasePath, out relativeFileName, requireFilenameCaseMatch);
                 }
             }
             else
@@ -1041,7 +1138,7 @@ namespace ApiDocs.Validation
             }
         }
 
-        protected virtual LinkValidationResult VerifyRelativeLink(FileInfo sourceFile, string originalLinkUrl, string docSetBasePath, out string relativeFileName)
+        protected virtual LinkValidationResult VerifyRelativeLink(FileInfo sourceFile, string originalLinkUrl, string docSetBasePath, out string relativeFileName, bool requireFilenameCaseMatch)
         {
             if (sourceFile == null) throw new ArgumentNullException("sourceFile");
             if (string.IsNullOrEmpty(originalLinkUrl)) throw new ArgumentNullException("linkUrl");
