@@ -82,10 +82,12 @@ namespace ApiDocs.Validation.Writers
          /// </summary>
          string GitHubBaseUrl { get; set; }
 
-         /// <summary>
-         /// Allows HTML tags in the markdown source to be passed through to the output markdown.
-         /// </summary>
-         bool AllowUnsafeHtmlContentInMarkdown { get; set; }
+        /// <summary>
+        /// Allows HTML tags in the markdown source to be passed through to the output markdown.
+        /// </summary>
+        bool AllowUnsafeHtmlContentInMarkdown { get; set; }
+
+        bool RespectOrderedListValues { get; set; }
     }
 
     public class DefaultPublishOptions : IPublishOptions
@@ -109,5 +111,7 @@ namespace ApiDocs.Validation.Writers
         public string GitHubBaseUrl { get; set; }
 
         public bool AllowUnsafeHtmlContentInMarkdown { get; set; }
+
+        public bool RespectOrderedListValues { get; set; }
     }
 }
